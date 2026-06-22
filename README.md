@@ -1,5 +1,10 @@
 # DA-VGGT
 
+<p align="center">
+  <a href="#"><img src="https://img.shields.io/badge/arXiv-TBD-b31b1b?logo=arxiv&logoColor=white" alt="arXiv"></a>
+  <a href="https://JSP-ywu.github.io/DA-VGGT/"><img src="https://img.shields.io/badge/Project_Page-DA--VGGT-2088c1" alt="Project Page"></a>
+</p>
+
 Official repository for **Diversity-Aware View Partitioning for Scalable VGGT**.
 
 DA-VGGT is a training-free, plug-and-play inference framework for VGGT that
@@ -78,3 +83,11 @@ accuracy/completion, and depth metrics) are adapted from
 [FastVGGT](https://github.com/mystorm16/FastVGGT)
 ([arXiv:2509.02560](https://arxiv.org/abs/2509.02560)). We thank the authors of
 both projects for releasing their code.
+
+## Citation
+
+If you find this work useful, please consider citing:
+
+```bibtex
+TBD
+```
