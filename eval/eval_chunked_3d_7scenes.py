@@ -1001,8 +1001,9 @@ def main():
     parser.add_argument("--chunk_size", type=int, default=50,
                         help="Max frames per chunk (sampling_max_frames)")
     parser.add_argument("--sampling_method", type=str, default="random_ls_revsim",
-                        choices=["origin", "random_ls_revsim"],
+                        choices=["random", "origin", "random_ls_revsim"],
                         help="Chunk sampling method. "
+                             "'random' = random balanced partitioning (no local search) baseline; "
                              "'origin' = single-batch, no chunking; "
                              "'random_ls_revsim' = diversity-aware local-search reverse-similarity split.")
     parser.add_argument("--local_search_iters", type=int, default=5,
@@ -1061,7 +1062,9 @@ def main():
 
     model = load_model(device, args.model_path, args.chunk_size)
     model.aggregator.dino_batch_size = args.dino_batch_size
-    model.aggregator.sampling_method = args.sampling_method
+    # 'random' is exposed as the random-balanced (no local search) baseline
+    model.aggregator.sampling_method = (
+        "random_balanced" if args.sampling_method == "random" else args.sampling_method)
     model.aggregator.sampling_local_search_iters = args.local_search_iters
 
     # Origin mode: disable chunking

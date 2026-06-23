@@ -1434,73 +1434,6 @@ def run_inference(model, image_paths, device, dtype):
 
 
 # =============================================================================
-# Shuffle inference
-# =============================================================================
-
-def run_inference_shuffled(model, image_paths, device, dtype, inner_method, chunk_size):
-    """Run inference with shuffled image order, then unshuffle predictions.
-
-    Args:
-        model: VGGT model.
-        image_paths: list of image file paths (original order).
-        device, dtype: torch device and dtype.
-        inner_method: "origin" or "random_ls_revsim" (the actual method after shuffling).
-        chunk_size: chunk size for chunked methods.
-
-    Returns:
-        pred_se3: (N, 4, 4) tensor, predictions in ORIGINAL order.
-        img_shape: (H, W).
-        num_chunks: int.
-        timing: dict.
-    """
-    N = len(image_paths)
-
-    # Create random permutation
-    perm = np.random.permutation(N)
-    inv_perm = np.argsort(perm)
-
-    # Shuffle image paths
-    shuffled_paths = [image_paths[i] for i in perm]
-
-    # Temporarily set model parameters
-    old_method = model.aggregator.sampling_method
-    old_max_frames = model.aggregator.sampling_max_frames
-
-    if inner_method == "origin":
-        model.aggregator.sampling_method = "origin"
-        model.aggregator.sampling_max_frames = 0
-    else:
-        model.aggregator.sampling_method = inner_method
-        model.aggregator.sampling_max_frames = chunk_size
-
-    # Run inference
-    pose_enc, img_shape, num_chunks, anchor, anchors, timing, sim_matrix, chunk_frame_indices = \
-        run_inference(model, shuffled_paths, device, dtype)
-
-    # Decode poses
-    pe_tensor = pose_enc.unsqueeze(0).float()
-    H, W = img_shape
-    with torch.amp.autocast('cuda', dtype=torch.float64, enabled=True):
-        ext, _ = pose_encoding_to_extri_intri(pe_tensor.to(device), (H, W))
-        pred_ext = ext[0]
-
-    add_row = torch.tensor([0, 0, 0, 1], device=device, dtype=torch.float64).expand(N, 1, 4)
-    pred_se3_shuffled = torch.cat((pred_ext.double(), add_row), dim=1)
-
-    # Unshuffle back to original order
-    pred_se3 = pred_se3_shuffled[torch.tensor(inv_perm, dtype=torch.long)]
-
-    # Restore model parameters
-    model.aggregator.sampling_method = old_method
-    model.aggregator.sampling_max_frames = old_max_frames
-
-    del pose_enc, pred_ext
-    torch.cuda.empty_cache()
-
-    return pred_se3, img_shape, num_chunks, timing
-
-
-# =============================================================================
 # Evaluation per sequence
 # =============================================================================
 
@@ -1539,54 +1472,6 @@ def evaluate_sequence(seq_dir, model, device, dtype, n_frames, thresholds,
 
     # GT c2w matrix for poseweight GT mode
     gt_c2w_arr = np.stack([gt_c2w[i] for i in valid], axis=0)  # (N, 4, 4)
-
-    # ------ Random baseline (shuffled single-batch, formerly 'shuffle_origin') ------
-    shuffle_inner = None
-    sm = getattr(model.aggregator, 'sampling_method', '')
-    if sm == "random":
-        shuffle_inner = "origin"
-
-    if shuffle_inner is not None:
-        chunk_size = model.aggregator.sampling_max_frames
-        if chunk_size <= 0:
-            chunk_size = 50
-
-        pred_se3, img_shape, num_chunks, timing = run_inference_shuffled(
-            model, image_paths, device, dtype, shuffle_inner, chunk_size
-        )
-
-        # Standard metrics (RRA, RTA, AUC)
-        rra, rta = compute_relative_pose_errors(pred_se3, gt_se3, N)
-        rra_np = rra.cpu().numpy()
-        rta_np = rta.cpu().numpy()
-        auc = calculate_auc(rra_np, rta_np, thresholds)
-
-        # ATE metrics
-        pred_se3_np = pred_se3.cpu().numpy()
-        ate_metrics = compute_ate_metrics(pred_se3_np, gt_c2w_arr)
-
-        # RPE metrics
-        rpe_metrics = compute_rpe_metrics(pred_se3, gt_se3, image_paths=image_paths)
-
-        del pred_se3, gt_ext, gt_se3, rra, rta
-        torch.cuda.empty_cache()
-
-        return {
-            'auc': auc,
-            'mean_rra': float(np.mean(rra_np)),
-            'mean_rta': float(np.mean(rta_np)),
-            'n_frames': N,
-            'n_total_frames': len(all_frames),
-            'num_chunks': num_chunks,
-            'timing': timing,
-            'rra': rra_np.tolist(),
-            'rta': rta_np.tolist(),
-            'ate': ate_metrics,
-            'rpe': rpe_metrics,
-            'image_paths': image_paths,
-            'pred_se3': pred_se3_np,
-            'gt_c2w': gt_c2w_arr,
-        }
 
     # ------ Pose-weighted re-chunking ------
     if poseweight_mode in ("pseudo", "gt"):
@@ -2082,7 +1967,7 @@ def main():
     parser.add_argument("--sampling_method", type=str, default="random_ls_revsim",
                         choices=["random", "origin", "random_ls_revsim"],
                         help="Chunk sampling method. "
-                             "'random' = shuffled single-batch baseline (formerly 'shuffle_origin'); "
+                             "'random' = random balanced partitioning (no local search) baseline; "
                              "'origin' = single-batch, no chunking; "
                              "'random_ls_revsim' = diversity-aware local-search reverse-similarity split.")
     parser.add_argument("--local_search_iters", type=int, default=5,
@@ -2125,7 +2010,9 @@ def main():
 
     model = load_model(device, args.model_path, args.chunk_size)
     model.aggregator.dino_batch_size = args.dino_batch_size
-    model.aggregator.sampling_method = args.sampling_method
+    # 'random' is exposed as the random-balanced (no local search) baseline
+    model.aggregator.sampling_method = (
+        "random_balanced" if args.sampling_method == "random" else args.sampling_method)
     model.aggregator.sampling_local_search_iters = args.local_search_iters
 
     # Origin mode: disable chunking, run single-batch forward
