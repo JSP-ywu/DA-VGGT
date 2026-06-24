@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="#"><img src="https://img.shields.io/badge/arXiv-TBD-b31b1b?logo=arxiv&logoColor=white" alt="arXiv"></a>
-  <a href="https://JSP-ywu.github.io/DA-VGGT/"><img src="https://img.shields.io/badge/Project_Page-DA--VGGT-2088c1" alt="Project Page"></a>
+  <a href="https://jspark1213.github.io/DA-VGGT/"><img src="https://img.shields.io/badge/Project_Page-DA--VGGT-2088c1" alt="Project Page"></a>
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@
 </p>
 
 DA-VGGT is a training-free, plug-and-play inference framework for VGGT that
-organizes input views into diversity-aware balanced subsets, constructed via
+organizes input views into diversity-aware balanced chunks, constructed via
 combinatorial graph partitioning over visual dissimilarity and spatial
 dispersion. This lets the transformer focus attention on geometrically
 informative views while reducing redundant attention, improving camera pose

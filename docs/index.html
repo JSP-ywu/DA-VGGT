@@ -33,8 +33,9 @@
     }
     .publication-authors { font-family: 'Google Sans', sans-serif; }
     .publication-authors .author-block { display: inline-block; margin: 0 .2rem; }
-    .publication-authors a { color: #3273dc; }
-    .publication-authors a:hover { text-decoration: underline; }
+    /* Linked authors (personal homepages) in blue to signal they are clickable */
+    .publication-authors a { color: #3273dc !important; font-weight: 600; }
+    .publication-authors a:hover { color: #2057b8 !important; text-decoration: underline; }
   </style>
 </head>
 
@@ -77,7 +78,7 @@
                   <span>arXiv</span>
                 </a>
                 <!-- Code -->
-                <a href="https://github.com/JSP-ywu/DA-VGGT" class="button is-medium">
+                <a href="https://github.com/jspark1213/DA-VGGT" class="button is-medium">
                   <span class="icon"><i class="fab fa-github"></i></span>
                   <span>Code</span>
                 </a>
