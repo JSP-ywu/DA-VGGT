@@ -51,12 +51,12 @@
     .video-wrap { position: relative; padding-top: 56.25%; border-radius: 8px; overflow: hidden; background: #fafafc; }
     .video-wrap > * { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
     /* live point-cloud viewer */
-    .viewer { position: relative; width: 100%; height: 440px; border-radius: 8px; overflow: hidden; background: #0e0e12; cursor: grab; }
+    .viewer { position: relative; width: 100%; height: 440px; border-radius: 8px; overflow: hidden; background: #ffffff; border: 1px solid #e6e6ea; cursor: grab; }
     .viewer:active { cursor: grabbing; }
     .viewer canvas { display: block; width: 100%; height: 100%; }
     .viewer .viewer-msg {
       position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-      color: #cfcfd6; font-size: .9rem; text-align: center; padding: 1rem;
+      color: #888; font-size: .9rem; text-align: center; padding: 1rem;
       white-space: pre-line; pointer-events: none;
     }
     .viewer-label { font-family: 'Google Sans', sans-serif; }
@@ -263,7 +263,7 @@
   <!-- ================== interactive point-cloud viewer ================= -->
   <script type="module">
     import * as THREE from 'three';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
     import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
 
     class PointCloudViewer {
@@ -272,7 +272,7 @@
         this.msgEl = container.querySelector('.viewer-msg');
 
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x0e0e12);
+        this.scene.background = new THREE.Color(0xffffff);
 
         this.camera = new THREE.PerspectiveCamera(50, 1, 0.001, 1000);
         this.camera.position.set(0, 0, 2.4);
@@ -281,9 +281,13 @@
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         this.container.appendChild(this.renderer.domElement);
 
-        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-        this.controls.enableDamping = true;
-        this.controls.dampingFactor = 0.08;
+        // TrackballControls = free tumbling in any direction (no polar/up-vector limit)
+        this.controls = new TrackballControls(this.camera, this.renderer.domElement);
+        this.controls.rotateSpeed = 3.0;
+        this.controls.zoomSpeed = 1.4;
+        this.controls.panSpeed = 0.8;
+        this.controls.staticMoving = false;
+        this.controls.dynamicDampingFactor = 0.15;
 
         this.loader = new PLYLoader();
         this.points = null;
@@ -302,11 +306,32 @@
         this.renderer.setSize(w, h, false);
         this.camera.aspect = w / h;
         this.camera.updateProjectionMatrix();
+        this.controls.handleResize();
       }
 
       _setMsg(t) { if (this.msgEl) this.msgEl.textContent = t || ''; }
 
-      load(url) {
+      // Default front view (used when a scene has no explicit `view`)
+      _defaultView() {
+        return { pos: [0, 0, 2.4], target: [0, 0, 0], up: [0, 1, 0] };
+      }
+
+      applyView(v) {
+        v = v || this._defaultView();
+        this.camera.up.set(...(v.up || [0, 1, 0]));
+        this.camera.position.set(...v.pos);
+        this.controls.target.set(...v.target);
+        this.controls.update();
+      }
+
+      // Print the current camera as a ready-to-paste `view: {...}` snippet
+      getView() {
+        const p = this.camera.position, t = this.controls.target, u = this.camera.up;
+        const r = n => Math.round(n * 1000) / 1000;
+        return { pos: [r(p.x), r(p.y), r(p.z)], target: [r(t.x), r(t.y), r(t.z)], up: [r(u.x), r(u.y), r(u.z)] };
+      }
+
+      load(url, view) {
         if (this.points) {
           this.scene.remove(this.points);
           this.points.geometry.dispose();
@@ -321,6 +346,9 @@
             const center = new THREE.Vector3();
             geo.boundingBox.getCenter(center);
             geo.translate(-center.x, -center.y, -center.z);
+            // OpenCV / Open3D (Y-down, Z-forward) -> Three.js (Y-up): flip Y & Z so the
+            // scene is upright and front-facing instead of showing its back / upside down.
+            geo.rotateX(Math.PI);
             const size = geo.boundingBox.getSize(new THREE.Vector3()).length() || 1;
             const s = 1.6 / size;
             geo.scale(s, s, s);
@@ -328,13 +356,11 @@
             const hasColor = !!geo.getAttribute('color');
             const material = new THREE.PointsMaterial({
               size: 0.0075, sizeAttenuation: true,
-              vertexColors: hasColor, color: hasColor ? 0xffffff : 0x7fb2ff,
+              vertexColors: hasColor, color: hasColor ? 0xffffff : 0x444444,
             });
             this.points = new THREE.Points(geo, material);
             this.scene.add(this.points);
-            this.camera.position.set(0, 0, 2.4);
-            this.controls.target.set(0, 0, 0);
-            this.controls.update();
+            this.applyView(view);
             this._setMsg('');
           },
           undefined,
@@ -343,10 +369,17 @@
       }
     }
 
-    // --- Edit this list: one entry per comparison scene, pointing to your .ply files ---
+    // --- Edit this list: one entry per comparison scene ---
+    // `view` sets the initial camera (so the page opens at a chosen angle, like the supp).
+    // To find values: rotate a viewer to the angle you want, then press the "v" key —
+    // a ready-to-paste `view: {...}` snippet is logged to the browser console (F12).
     const SCENES = [
-      { name: 'Breakfast Room (Neural RGB-D)', ours: 'assets/pointclouds/scene1_ours.ply', baseline: 'assets/pointclouds/scene1_vggt.ply' },
-      { name: 'ScanNet scene0307_01',          ours: 'assets/pointclouds/scene2_ours.ply', baseline: 'assets/pointclouds/scene2_vggt.ply' },
+      { name: 'Breakfast Room (Neural RGB-D)',
+        ours: 'assets/pointclouds/scene1_ours.ply', baseline: 'assets/pointclouds/scene1_vggt.ply',
+        view: { pos: [0, 0, 2.4], target: [0, 0, 0], up: [0, 1, 0] } },
+      { name: 'ScanNet scene0307_01',
+        ours: 'assets/pointclouds/scene2_ours.ply', baseline: 'assets/pointclouds/scene2_vggt.ply',
+        view: { pos: [0, 0, 2.4], target: [0, 0, 0], up: [0, 1, 0] } },
     ];
 
     const oursViewer = new PointCloudViewer(document.getElementById('viewer-ours'));
@@ -361,11 +394,19 @@
     });
 
     function loadScene(i) {
-      oursViewer.load(SCENES[i].ours);
-      baseViewer.load(SCENES[i].baseline);
+      oursViewer.load(SCENES[i].ours, SCENES[i].view);
+      baseViewer.load(SCENES[i].baseline, SCENES[i].view);
     }
     select.addEventListener('change', (e) => loadScene(Number(e.target.value)));
     loadScene(0);
+
+    // Press "v" to capture the current angle of the "Ours" viewer for the selected scene.
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'v' || e.key === 'V') {
+        const view = oursViewer.getView();
+        console.log(`[${SCENES[+select.value].name}] view:`, JSON.stringify(view));
+      }
+    });
   </script>
 
 </body>
